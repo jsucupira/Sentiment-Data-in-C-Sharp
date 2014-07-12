@@ -1,95 +1,168 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.Composition.Hosting;
-using System.Configuration;
-using System.Threading;
-using System.Threading.Tasks;
+using System.IO;
+using System.Linq;
+using System.Text;
 using Core.DependencyResolver;
 using Data.AzureBlob;
 using Data.Contracts;
 using Data.FileSystem;
+using Domain;
+using NDesk.Options;
 
 namespace TwitterService
 {
     internal static class Program
     {
-        static readonly CancellationTokenSource _cts = new CancellationTokenSource();
-        static readonly CancellationToken _cancellationToken = _cts.Token;
         private static IStorage _storage;
+
         private static void Main(string[] args)
         {
-            // Creating catagolo for dependencies
-            AggregateCatalog catalog = new AggregateCatalog();
-            catalog.Catalogs.Add(new AssemblyCatalog(typeof(FileSystemStorage).Assembly));
-            //catalog.Catalogs.Add(new AssemblyCatalog(typeof(AzureBlobStorage).Assembly));
-            ServiceLocator.Initialize(catalog);
-            _storage = ServiceLocator.GetInstance<IStorage>();
 
             Console.WriteLine("Starting to process data");
-            Console.WriteLine("type quit to stop the process");
 
-            //GettingDataFromTwitter();
-            CheckingSavedFiles();
-        }
+            bool showHelp = false;
+            bool streamData = false;
+            bool nonsentiment = false;
+            string processFile = null;
+            string processStartDate = null;
+            string processEndDate = null;
+            string storageType = "FileSystem";
 
-        private static void CheckingSavedFiles()
-        {
-            //var getAllTweets = _storage.Get("635407453946620513.json");
-            //var getAllTweets = _storage.Get("7/12/2014 3:02:57 AM");
-            var getAllTweets = _storage.Get(635407453946620513);
-
-            foreach (var tweet in getAllTweets)
+            OptionSet p = new OptionSet
             {
-                if (!string.IsNullOrEmpty(tweet))
-                { }
+                {
+                    "storage=", "type the storage type [OPTIONAL]. [FileSystem] or [AzureStorage]", v => storageType = v
+                },
+                {
+                    "s|stream=", "Stream twitter data. This is true or false [OPTIONAL]", (bool v) => streamData = v
+                },
+                {
+                    "nonsentiment=", "Analyse the twitter files for words found in the tweet and its calculated scores [OPTIONAL]", (bool v) => nonsentiment = v
+                },
+                {
+                    "processEndDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the end date for when the file was created", v => processEndDate = v
+                },
+                {
+                    "filename=", "Process the data retrieved from twitter [OPTIONAL]. This value should be the file name that contains the tweets", v => processFile = v
+                },
+                {
+                    "processStartDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the start date for when the file was created", v => processStartDate = v
+                },
+                {
+                    "h|help", "show this message and exit", v => showHelp = v != null
+                },
+            };
+
+            List<string> extra;
+            try
+            {
+                extra = p.Parse(args);
             }
-        }
-
-        private static void GettingDataFromTwitter()
-        {
-            var checkTimer = ConfigurationManager.AppSettings["stop_after"];
-            if (!string.IsNullOrEmpty(checkTimer))
+            catch (OptionException e)
             {
-                int timeout;
-                if (int.TryParse(checkTimer, out timeout))
-                {
-                    double totalMileseconds = (timeout * 60) * 1000;
-                    System.Timers.Timer timer = new System.Timers.Timer(totalMileseconds);
-                    timer.Elapsed += timer_Elapsed;
-                    timer.Start();
-                }
-            }
-
-            TwitterStream twitterStream = new TwitterStream(_storage);
-
-            Task.Factory.StartNew(() =>
-            {
-                try
-                {
-                    twitterStream.StreamData(_cancellationToken);
-                }
-                catch (AggregateException aggregateException)
-                {
-                    Console.WriteLine(aggregateException.Flatten().InnerExceptions);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
-            }, _cancellationToken);
-
-            while (Console.ReadLine() != "quit" && !_cancellationToken.IsCancellationRequested)
-            {
+                Error(p, e.Message);
+                return;
             }
 
-            if (!_cancellationToken.IsCancellationRequested && _cancellationToken.CanBeCanceled)
-                _cts.Cancel();
+            if (extra.Count > 0)
+                Error(p, "Incorrect parameters");
 
-            Thread.Sleep(TimeSpan.FromSeconds(10));
+            if (showHelp)
+            {
+                ShowHelp(p);
+                return;
+            }
+
+            SetupStorage(storageType);
+
+
+            if (streamData)
+            {
+                Console.WriteLine("type quit to stop the process");
+                RetrieveData.GettingDataFromTwitter(_storage);
+            }
+            else if (nonsentiment)
+            {
+                if (File.Exists("non_sentiment.txt"))
+                    File.Delete("non_sentiment.txt");
+
+                StringBuilder nonSentiments = new StringBuilder();
+                if (!string.IsNullOrEmpty(processFile))
+                {
+                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, processFile);
+                    foreach (var item in items.OrderBy(t => t.Value))
+                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+                }
+                else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
+                {
+                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, new[] { processStartDate, processEndDate });
+                    foreach (var item in items.OrderBy(t => t.Value))
+                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+                }
+                else if (!string.IsNullOrEmpty(processStartDate))
+                {
+                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, processStartDate);
+                    foreach (var item in items.OrderBy(t => t.Value))
+                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+                }
+                
+                File.AppendAllText("non_sentiment.txt", nonSentiments.ToString());
+                Console.WriteLine("Saved non_sentiment.txt created.");
+            }
+            else if (!string.IsNullOrEmpty(processFile))
+            {
+                Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processFile));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
+            {
+                Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate }));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate))
+            {
+                Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate));
+            }
+
+            Console.WriteLine("Finished...");
+            Console.ReadKey();
         }
 
-        static void timer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        private static void SetupStorage(string storageType)
         {
-            _cts.Cancel();
+            AggregateCatalog catalog = new AggregateCatalog();
+
+            if (storageType.Equals("AzureStorage", StringComparison.OrdinalIgnoreCase))
+                catalog.Catalogs.Add(new AssemblyCatalog(typeof(AzureBlobStorage).Assembly));
+            else
+                catalog.Catalogs.Add(new AssemblyCatalog(typeof(FileSystemStorage).Assembly));
+
+            ServiceLocator.Initialize(catalog);
+            _storage = ServiceLocator.GetInstance<IStorage>();
+        }
+
+        private static void Error(OptionSet p, string message)
+        {
+            Console.WriteLine();
+            Console.Write("TwitterService: " + message + "\r\n");
+            Console.WriteLine();
+            Console.WriteLine("Try `TwitterService --help' for more information.");
+            p.WriteOptionDescriptions(Console.Out);
+            Console.WriteLine();
+        }
+
+        private static void ShowHelp(OptionSet p)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Usage: TwitterService [OPTIONS]");
+            Console.WriteLine();
+            Console.WriteLine("Stream data from twitter or process the data retrieved from twitter.");
+            Console.WriteLine();
+            Console.WriteLine("Options:");
+            p.WriteOptionDescriptions(Console.Out);
+            Console.WriteLine();
+            Console.WriteLine("Example: TwitterService -stream or TwitterService - process");
+            Console.WriteLine();
         }
     }
 }

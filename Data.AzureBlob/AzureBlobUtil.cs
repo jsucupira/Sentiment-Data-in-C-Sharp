@@ -10,40 +10,133 @@ namespace Data.AzureBlob
 {
     public class AzureBlobUtil
     {
-        private const int MAX_BLOCK_SIZE = 4000000; // Approx. 4MB chunk size
-        private readonly CloudStorageAccount _storageAccount;
-
         public AzureBlobUtil(string accountConnetingString)
         {
             _storageAccount = CloudStorageAccount.Parse(accountConnetingString);
         }
 
-        public Uri UploadBlob(string filePath, string containerName)
+        private const int MAX_BLOCK_SIZE = 4000000; // Approx. 4MB chunk size
+        private readonly CloudStorageAccount _storageAccount;
+
+        public IEnumerable<string> BlobList(string containerName)
         {
-            byte[] fileContent = File.ReadAllBytes(filePath);
-            string blobName = Path.GetFileName(filePath);
+            List<string> list = new List<string>();
+            // Retrieve storage account from connection string.
+            // Create the blob client. 
+            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
 
-            return UploadBlob(fileContent, containerName, blobName);
-        }
-        
-        public Uri UploadBlob(byte[] fileContent, string containerName, string blobName)
-        {
-            CloudBlobClient blobclient = _storageAccount.CreateCloudBlobClient();
+            // Retrieve reference to a previously created container.
+            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
 
-            CloudBlobContainer container = blobclient.GetContainerReference(containerName);
-
-            CloudBlockBlob blob = container.GetBlockBlobReference(blobName);
-
-            HashSet<string> blocklist = new HashSet<string>();
-            foreach (FileBlock block in GetFileBlocks(fileContent))
+            // Loop over items within the container and output the length and URI.
+            foreach (IListBlobItem item in container.ListBlobs(null, false))
             {
-                blob.PutBlock(block.Id, new MemoryStream(block.Content, true), null);
-                blocklist.Add(block.Id);
+                CloudBlockBlob blockBlob = item as CloudBlockBlob;
+                if (blockBlob != null)
+                {
+                    CloudBlockBlob blob = blockBlob;
+                    list.Add(blob.Name);
+                }
             }
+            return list;
+        }
 
-            blob.PutBlockList(blocklist);
+        public IEnumerable<string> BlobList(string containerName, DateTime startDateTime, DateTime? enDateTime = null)
+        {
+            List<string> list = new List<string>();
+            // Retrieve storage account from connection string.
+            // Create the blob client. 
+            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
 
-            return blob.Uri;
+            // Retrieve reference to a previously created container.
+            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+
+
+            IEnumerable<CloudBlockBlob> blobList = null;
+            if (enDateTime == null)
+                blobList = container.ListBlobs().OfType<CloudBlockBlob>().Where(t => t.Properties.LastModified >= startDateTime && t.Name.EndsWith(".json"));
+            else
+                blobList = container.ListBlobs().OfType<CloudBlockBlob>().Where(t => t.Properties.LastModified >= startDateTime && t.Properties.LastModified <= enDateTime.Value && t.Name.EndsWith(".json"));
+
+            // Loop over items within the container and output the length and URI.
+            foreach (CloudBlockBlob item in blobList)
+            {
+                CloudBlockBlob blockBlob = item;
+                if (blockBlob != null)
+                {
+                    CloudBlockBlob blob = blockBlob;
+                    list.Add(blob.Name);
+                }
+            }
+            return list;
+        }
+
+        public bool CheckIfFileExists(string containerName, string fileName)
+        {
+            // Create the blob client.
+            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+
+            // Retrieve reference to a previously created container.
+            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+
+            // Retrieve reference to a blob named "myblob.txt"
+            CloudBlockBlob blockBlob2 = container.GetBlockBlobReference(fileName);
+            try
+            {
+                blockBlob2.FetchAttributes();
+                return true;
+            }
+            catch (StorageException e)
+            {
+                if (e.Message.Contains("404"))
+                    return false;
+                throw;
+            }
+        }
+
+        public void DeleteBlobs(string containerName, string blobName)
+        {
+            // Retrieve storage account from connection string.
+            // Create the blob client.
+            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+
+            // Retrieve reference to a previously created container.
+            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+
+            // Retrieve reference to a blob named "myblob.txt".
+            CloudBlockBlob blockBlob = container.GetBlockBlobReference(blobName);
+
+            // Delete the blob.
+            blockBlob.Delete();
+        }
+
+        public void DownloadBlobAsFile(string containerName, string filePath, string fileName)
+        {
+            string content = DownloadBlobAsText(containerName, fileName);
+
+            FileInfo file = new FileInfo(filePath);
+            if (file.Directory != null) file.Directory.Create(); // If the directory already exists, this method does nothing.
+            File.AppendAllText(file.FullName, content, Encoding.UTF8);
+        }
+
+        public string DownloadBlobAsText(string containerName, string fileName)
+        {
+            // Create the blob client.
+            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+
+            // Retrieve reference to a previously created container.
+            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+
+            // Retrieve reference to a blob named "myblob.txt"
+            CloudBlockBlob blockBlob2 = container.GetBlockBlobReference(fileName);
+
+            string text;
+            using (MemoryStream memoryStream = new MemoryStream())
+            {
+                blockBlob2.DownloadToStream(memoryStream);
+                text = Encoding.UTF8.GetString(memoryStream.ToArray());
+            }
+            return text;
         }
 
         private IEnumerable<FileBlock> GetFileBlocks(byte[] fileContent)
@@ -79,122 +172,32 @@ namespace Data.AzureBlob
             return hashSet;
         }
 
-        public void DeleteBlobs(string containerName, string blobName)
+        public Uri UploadBlob(string filePath, string containerName)
         {
-            // Retrieve storage account from connection string.
-            // Create the blob client.
-            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+            byte[] fileContent = File.ReadAllBytes(filePath);
+            string blobName = Path.GetFileName(filePath);
 
-            // Retrieve reference to a previously created container.
-            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
-
-            // Retrieve reference to a blob named "myblob.txt".
-            CloudBlockBlob blockBlob = container.GetBlockBlobReference(blobName);
-
-            // Delete the blob.
-            blockBlob.Delete();
+            return UploadBlob(fileContent, containerName, blobName);
         }
 
-        public IEnumerable<string> BlobList(string containerName)
+        public Uri UploadBlob(byte[] fileContent, string containerName, string blobName)
         {
-            List<string> list = new List<string>();
-            // Retrieve storage account from connection string.
-            // Create the blob client. 
-            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+            CloudBlobClient blobclient = _storageAccount.CreateCloudBlobClient();
 
-            // Retrieve reference to a previously created container.
-            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+            CloudBlobContainer container = blobclient.GetContainerReference(containerName);
 
-            // Loop over items within the container and output the length and URI.
-            foreach (IListBlobItem item in container.ListBlobs(null, false))
+            CloudBlockBlob blob = container.GetBlockBlobReference(blobName);
+
+            HashSet<string> blocklist = new HashSet<string>();
+            foreach (FileBlock block in GetFileBlocks(fileContent))
             {
-                CloudBlockBlob blockBlob = item as CloudBlockBlob;
-                if (blockBlob != null)
-                {
-                    CloudBlockBlob blob = blockBlob;
-                    list.Add(blob.Name);
-                }
+                blob.PutBlock(block.Id, new MemoryStream(block.Content, true), null);
+                blocklist.Add(block.Id);
             }
-            return list;
-        }
 
-        public IEnumerable<string> BlobList(string containerName, DateTime createdDate)
-        {
-            List<string> list = new List<string>();
-            // Retrieve storage account from connection string.
-            // Create the blob client. 
-            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
+            blob.PutBlockList(blocklist);
 
-            // Retrieve reference to a previously created container.
-            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
-
-
-            var blobList = container.ListBlobs().OfType<CloudBlockBlob>().Where(t => t.Properties.LastModified >= createdDate && t.Name.EndsWith(".json"));
-
-            // Loop over items within the container and output the length and URI.
-            foreach (CloudBlockBlob item in blobList)
-            {
-                CloudBlockBlob blockBlob = item as CloudBlockBlob;
-                if (blockBlob != null)
-                {
-                    CloudBlockBlob blob = blockBlob;
-                    list.Add(blob.Name);
-                }
-            }
-            return list;
-        }
-
-        public string DownloadBlobAsText(string containerName, string fileName)
-        {
-            // Create the blob client.
-            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
-
-            // Retrieve reference to a previously created container.
-            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
-
-            // Retrieve reference to a blob named "myblob.txt"
-            CloudBlockBlob blockBlob2 = container.GetBlockBlobReference(fileName);
-
-            string text;
-            using (MemoryStream memoryStream = new MemoryStream())
-            {
-                blockBlob2.DownloadToStream(memoryStream);
-                text = Encoding.UTF8.GetString(memoryStream.ToArray());
-            }
-            return text;
-        }
-
-        public void DownloadBlobAsFile(string containerName, string filePath, string fileName)
-        {
-            string content = DownloadBlobAsText(containerName, fileName);
-
-            FileInfo file = new FileInfo(filePath);
-            if (file.Directory != null) file.Directory.Create(); // If the directory already exists, this method does nothing.
-            File.AppendAllText(file.FullName, content, Encoding.UTF8);
-        }
-
-        public bool CheckIfFileExists(string containerName, string fileName)
-        {
-            // Create the blob client.
-            CloudBlobClient blobClient = _storageAccount.CreateCloudBlobClient();
-
-            // Retrieve reference to a previously created container.
-            CloudBlobContainer container = blobClient.GetContainerReference(containerName);
-
-            // Retrieve reference to a blob named "myblob.txt"
-            CloudBlockBlob blockBlob2 = container.GetBlockBlobReference(fileName);
-            try
-            {
-                blockBlob2.FetchAttributes();
-                return true;
-            }
-            catch (StorageException e)
-            {
-                if (e.Message.Contains("404"))
-                    return false;
-                else
-                    throw;
-            }
+            return blob.Uri;
         }
     }
 }

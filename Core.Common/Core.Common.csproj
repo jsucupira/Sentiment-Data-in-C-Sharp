@@ -41,6 +41,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Authentication\OAuthBase.cs" />
+    <Compile Include="Helpers\EnumerableExtensions.cs" />
+    <Compile Include="Helpers\Guard.cs" />
+    <Compile Include="Helpers\ReflectionTypeChecker.cs" />
+    <Compile Include="Helpers\ReflectionUtils.cs" />
     <Compile Include="Helpers\Utility.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
