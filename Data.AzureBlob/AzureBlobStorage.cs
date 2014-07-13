@@ -62,7 +62,7 @@ namespace Data.AzureBlob
                 else
                 {
                     var stringValue = Encoding.UTF8.GetBytes(_azureBlobUtil.DownloadBlobAsText(_containerName, filter));
-                    blobList.AddRange(GetArrayFromString(stringValue));
+                    blobList.AddRange(stringValue.GetArrayFromString());
                     return blobList.ToArray();
                 }
             }
@@ -95,26 +95,10 @@ namespace Data.AzureBlob
                     break;
 
                 var stringValue = Encoding.UTF8.GetBytes(_azureBlobUtil.DownloadBlobAsText(_containerName, blob));
-                tweets.AddRange(GetArrayFromString(stringValue));
+                tweets.AddRange(stringValue.GetArrayFromString());
                 currentCount = tweets.Count;
             }
             return tweets.ToArray();
-        }
-
-        private static IEnumerable<string> GetArrayFromString(byte[] stringValue)
-        {
-            List<string> blobList = new List<string>();
-            using (MemoryStream stream = new MemoryStream((stringValue)))
-            using (StreamReader reader = new StreamReader(stream, Encoding.UTF8, true, stringValue.Length))
-            {
-                var currentLine = reader.ReadLine();
-                while (!string.IsNullOrEmpty(currentLine))
-                {
-                    blobList.Add(currentLine);
-                    currentLine = reader.ReadLine();
-                }
-            }
-            return blobList;
         }
     }
 }

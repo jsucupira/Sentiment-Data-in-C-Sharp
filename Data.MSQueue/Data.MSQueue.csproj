@@ -4,11 +4,11 @@
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{A0C2D429-E329-4451-829E-B92DB9585131}</ProjectGuid>
+    <ProjectGuid>{64F6CF07-848C-42C3-A844-E07A5597631F}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Data.FileSystem</RootNamespace>
-    <AssemblyName>Data.FileSystem</AssemblyName>
+    <RootNamespace>Data.MSQueue</RootNamespace>
+    <AssemblyName>Data.MSQueue</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -16,7 +16,7 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>..\lib\filesystem\</OutputPath>
+    <OutputPath>..\lib\msmq\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -32,8 +32,9 @@
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.ComponentModel.Composition" />
-    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Messaging" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -41,12 +42,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="FileSystemStorage.cs" />
+    <Compile Include="MsmQueue.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Core.Common\Core.Common.csproj">
-      <Project>{1C52C3B5-6BFC-4213-B5A2-DBEC3825E265}</Project>
+      <Project>{1c52c3b5-6bfc-4213-b5a2-dbec3825e265}</Project>
       <Name>Core.Common</Name>
     </ProjectReference>
     <ProjectReference Include="..\Data.Contracts\Data.Contracts.csproj">

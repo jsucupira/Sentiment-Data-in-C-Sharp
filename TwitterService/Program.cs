@@ -25,6 +25,7 @@ namespace TwitterService
             bool showHelp = false;
             bool streamData = false;
             bool nonsentiment = false;
+            bool readData = false;
             string processFile = null;
             string processStartDate = null;
             string processEndDate = null;
@@ -33,10 +34,13 @@ namespace TwitterService
             OptionSet p = new OptionSet
             {
                 {
-                    "storage=", "type the storage type [OPTIONAL]. [FileSystem] or [AzureStorage]", v => storageType = v
+                    "storage=", "type the storage type [OPTIONAL]. [FileSystem], [AzureStorage], or [MSMQ]", v => storageType = v
                 },
                 {
                     "s|stream=", "Stream twitter data. This is true or false [OPTIONAL]", (bool v) => streamData = v
+                },
+                {
+                    "readdata=", "Read data saved in storage [OPTIONAL]", (bool v) => readData = v
                 },
                 {
                     "nonsentiment=", "Analyse the twitter files for words found in the tweet and its calculated scores [OPTIONAL]", (bool v) => nonsentiment = v
@@ -123,9 +127,12 @@ namespace TwitterService
             {
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate));
             }
+            else if (readData)
+            {
+                Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, null));
+            }
 
             Console.WriteLine("Finished...");
-            Console.ReadKey();
         }
 
         private static void SetupStorage(string storageType)
@@ -134,6 +141,12 @@ namespace TwitterService
 
             if (storageType.Equals("AzureStorage", StringComparison.OrdinalIgnoreCase))
                 catalog.Catalogs.Add(new AssemblyCatalog(typeof(AzureBlobStorage).Assembly));
+            else if (storageType.Equals("MSMQ", StringComparison.OrdinalIgnoreCase))
+            {
+                //catalog.Catalogs.Add(new AssemblyCatalog(typeof(MsmQueueStorage).Assembly));
+                //testing out how to load just the dll. In case the implemementation was not in the actual solution
+                catalog.Catalogs.Add(new DirectoryCatalog(@"..\..\..\lib\msmq\", "Data.MSQueue.dll"));
+            }
             else
                 catalog.Catalogs.Add(new AssemblyCatalog(typeof(FileSystemStorage).Assembly));
 
