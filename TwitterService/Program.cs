@@ -25,6 +25,7 @@ namespace TwitterService
             bool showHelp = false;
             bool streamData = false;
             bool nonsentiment = false;
+            bool byState = false;
             bool readData = false;
             string processFile = null;
             string processStartDate = null;
@@ -43,6 +44,9 @@ namespace TwitterService
                     "readdata=", "Read data saved in storage [OPTIONAL]", (bool v) => readData = v
                 },
                 {
+                    "sentimentbystate=", "Analyse sentiment by US state [OPTIONAL]", (bool v) => byState = v
+                },
+                {
                     "nonsentiment=", "Analyse the twitter files for words found in the tweet and its calculated scores [OPTIONAL]", (bool v) => nonsentiment = v
                 },
                 {
@@ -59,25 +63,7 @@ namespace TwitterService
                 },
             };
 
-            List<string> extra;
-            try
-            {
-                extra = p.Parse(args);
-            }
-            catch (OptionException e)
-            {
-                Error(p, e.Message);
-                return;
-            }
-
-            if (extra.Count > 0)
-                Error(p, "Incorrect parameters");
-
-            if (showHelp)
-            {
-                ShowHelp(p);
-                return;
-            }
+            if (ParseArguments(args, p, showHelp)) return;
 
             SetupStorage(storageType);
 
@@ -87,33 +73,13 @@ namespace TwitterService
                 Console.WriteLine("type quit to stop the process");
                 RetrieveData.GettingDataFromTwitter(_storage);
             }
+            else if (byState)
+            {
+                AnalyseByState(processFile, processStartDate, processEndDate);
+            }
             else if (nonsentiment)
             {
-                if (File.Exists("non_sentiment.txt"))
-                    File.Delete("non_sentiment.txt");
-
-                StringBuilder nonSentiments = new StringBuilder();
-                if (!string.IsNullOrEmpty(processFile))
-                {
-                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, processFile);
-                    foreach (var item in items.OrderBy(t => t.Value))
-                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
-                }
-                else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
-                {
-                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, new[] { processStartDate, processEndDate });
-                    foreach (var item in items.OrderBy(t => t.Value))
-                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
-                }
-                else if (!string.IsNullOrEmpty(processStartDate))
-                {
-                    var items = ParseTwitterData.RetrieveTermSentiments(_storage, processStartDate);
-                    foreach (var item in items.OrderBy(t => t.Value))
-                        nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
-                }
-                
-                File.AppendAllText("non_sentiment.txt", nonSentiments.ToString());
-                Console.WriteLine("Saved non_sentiment.txt created.");
+                AnalyseNonSentiments(processFile, processStartDate, processEndDate);
             }
             else if (!string.IsNullOrEmpty(processFile))
             {
@@ -133,6 +99,99 @@ namespace TwitterService
             }
 
             Console.WriteLine("Finished...");
+        }
+
+        private static bool ParseArguments(string[] args, OptionSet p, bool showHelp)
+        {
+            List<string> extra;
+            try
+            {
+                extra = p.Parse(args);
+            }
+            catch (OptionException e)
+            {
+                Error(p, e.Message);
+                return true;
+            }
+
+            if (extra.Count > 0)
+                Error(p, "Incorrect parameters");
+
+            if (showHelp)
+            {
+                ShowHelp(p);
+                return true;
+            }
+            return false;
+        }
+
+        private static void AnalyseNonSentiments(string processFile, string processStartDate, string processEndDate)
+        {
+            if (File.Exists("non_sentiment.txt"))
+                File.Delete("non_sentiment.txt");
+
+            StringBuilder nonSentiments = new StringBuilder();
+            if (!string.IsNullOrEmpty(processFile))
+            {
+                var items = ParseTwitterData.RetrieveTermSentiments(_storage, processFile);
+                foreach (var item in items.OrderBy(t => t.Value))
+                    nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
+            {
+                var items = ParseTwitterData.RetrieveTermSentiments(_storage, new[] { processStartDate, processEndDate });
+                foreach (var item in items.OrderBy(t => t.Value))
+                    nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate))
+            {
+                var items = ParseTwitterData.RetrieveTermSentiments(_storage, processStartDate);
+                foreach (var item in items.OrderBy(t => t.Value))
+                    nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else
+            {
+                var items = ParseTwitterData.RetrieveTermSentiments(_storage, null);
+                foreach (var item in items.OrderBy(t => t.Value))
+                    nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+
+            File.AppendAllText("non_sentiment.txt", nonSentiments.ToString());
+            Console.WriteLine("Saved non_sentiment.txt created.");
+        }
+
+        private static void AnalyseByState(string processFile, string processStartDate, string processEndDate)
+        {
+            if (File.Exists("by_state.txt"))
+                File.Delete("by_state.txt");
+            StringBuilder stateSentiment = new StringBuilder();
+            if (!string.IsNullOrEmpty(processFile))
+            {
+                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processFile);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
+            {
+                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, new[] { processStartDate, processEndDate });
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate))
+            {
+                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processStartDate);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else
+            {
+                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, null);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+
+            File.AppendAllText("by_state.txt", stateSentiment.ToString());
+            Console.WriteLine("Saved by_state.txt created.");
         }
 
         private static void SetupStorage(string storageType)

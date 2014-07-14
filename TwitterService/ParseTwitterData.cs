@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Core.Common.Helpers;
 using Data.Contracts;
@@ -13,6 +14,7 @@ namespace TwitterService
     public class ParseTwitterData
     {
         private static readonly string _affinFilePath = ConfigurationManager.AppSettings["afinn_file"];
+
         #region lookups
 
         private static readonly Dictionary<string, string> _tweetLookupDictionary = new Dictionary<string, string>
@@ -113,10 +115,14 @@ namespace TwitterService
             if (dictionary.ContainsKey("text"))
             {
                 object tweetObject = dictionary["text"];
-                if (tweetObject != null)
+                if (tweetObject != null && !string.IsNullOrEmpty(tweetObject.ToString()))
                     tweet = tweetObject.ToString();
             }
             return tweet;
+        }
+        private static Dictionary<string, object> GetTweetDictionary(string jsonData)
+        {
+            return JsonConvert.DeserializeObject<Dictionary<string, object>>(jsonData);
         }
 
         public static List<SocialData> RetrieveTweetObjects(IStorage storage, string filter = null)
@@ -198,7 +204,7 @@ namespace TwitterService
             {
                 float tweetScore = 0;
                 tweetScore += ScoreEachTweet(socialData).Item2;
-                
+
                 var tweetWords = socialData.Split(' ');
                 foreach (var word in tweetWords)
                 {
@@ -210,7 +216,7 @@ namespace TwitterService
                             if (nonSentiments.ContainsKey(wordToLower))
                             {
                                 nonSentiments[wordToLower] += tweetScore;
-                                totalAppearance[wordToLower] ++;
+                                totalAppearance[wordToLower]++;
                             }
                             else
                             {
@@ -227,6 +233,88 @@ namespace TwitterService
                 termsAndScores.Add(nonSentiment.Key, (nonSentiment.Value / totalAppearance[nonSentiment.Key]));
             }
             return termsAndScores;
+        }
+
+        public static Dictionary<string, float> RetrieveScoresByUSStates(IStorage storage, object filter = null)
+        {
+            IEnumerable<string> getAllTweets = storage.Get(filter);
+            List<Dictionary<string, object>> tweetDicList = new List<Dictionary<string, object>>();
+            Dictionary<string, List<string>> tweetsByState = new Dictionary<string, List<string>>();
+            var lookupStateList = Utility.StateList();
+            Dictionary<string, float> stateScores = new Dictionary<string, float>();
+
+            foreach (var tweet in getAllTweets)
+                tweetDicList.Add(GetTweetDictionary(tweet));
+
+            foreach (var tweet in tweetDicList)
+            {
+                if (tweet.ContainsKey("user"))
+                {
+                    var userObject = tweet["user"];
+                    if (userObject != null)
+                    {
+                        var user = JsonConvert.DeserializeObject<Dictionary<string, object>>(userObject.ToString());
+                        if (user != null && user.ContainsKey("location"))
+                        {
+                            var locationObject = user["location"] as string;
+
+
+                            if (!string.IsNullOrEmpty(locationObject))
+                            {
+                                string[] location = locationObject.Split(',');
+                                var currentState = GetStateValue(location, lookupStateList);
+                                if (!string.IsNullOrEmpty(currentState))
+                                {
+                                    if (!tweetsByState.ContainsKey(currentState))
+                                        tweetsByState.Add(currentState, new List<string>());
+
+                                    tweetsByState[currentState].Add(tweet["text"] as string);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var state in tweetsByState.Where(t => t.Value.Any()))
+            {
+                float tweetScore = 0;
+                foreach (var tweetList in state.Value)
+                {
+                    tweetScore += ScoreEachTweet(tweetList).Item2;
+                }
+                stateScores[state.Key] = tweetScore / state.Value.Count;
+
+            }
+
+            return stateScores;
+        }
+
+        private static string GetStateValue(string[] location, Dictionary<string, string> stateDictionary)
+        {
+            if (location.Length > 1)
+            {
+                location[0] = location[0].Trim();
+                location[1] = location[1].Trim();
+                if (stateDictionary.ContainsKey(location[1].ToUpper()))
+                    return location[1].ToUpper();
+                else if (stateDictionary.ContainsKey(location[0].ToUpper()))
+                    return location[0].ToUpper();
+                else if (stateDictionary.ContainsValue(location[1].ToLower()))
+                    return stateDictionary.FirstOrDefault(t => t.Value == location[1].ToLower()).Key;
+                else if (stateDictionary.ContainsValue(location[0].ToLower()))
+                    return stateDictionary.FirstOrDefault(t => t.Value == location[0].ToLower()).Key;
+            }
+            else
+            {
+                location[0] = location[0].Trim();
+                if (stateDictionary.ContainsKey(location[0].ToUpper()))
+                    return location[0].ToUpper();
+                else if (stateDictionary.ContainsValue(location[0].ToLower()))
+                    return stateDictionary.FirstOrDefault(t => t.Value == location[0].ToLower()).Key;
+            }
+
+            return string.Empty; //no state found
         }
     }
 }
