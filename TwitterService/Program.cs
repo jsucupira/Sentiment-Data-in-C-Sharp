@@ -83,19 +83,41 @@ namespace TwitterService
             }
             else if (!string.IsNullOrEmpty(processFile))
             {
+                if (File.Exists("total_sentiment.txt"))
+                    File.Delete("total_sentiment.txt");
+                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processFile);
+
+                File.AppendAllText("total_sentiment.txt", sentiment.ToString());
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processFile));
             }
             else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
             {
+                if (File.Exists("total_sentiment.txt"))
+                    File.Delete("total_sentiment.txt");
+                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate });
+
+                File.AppendAllText("total_sentiment.txt", sentiment.ToString());
+
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate }));
             }
             else if (!string.IsNullOrEmpty(processStartDate))
             {
+                if (File.Exists("total_sentiment.txt"))
+                    File.Delete("total_sentiment.txt");
+                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate);
+
+                File.AppendAllText("total_sentiment.txt", sentiment.ToString());
+
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate));
             }
             else if (readData)
             {
-                Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, null));
+                if (File.Exists("total_sentiment.txt"))
+                    File.Delete("total_sentiment.txt");
+                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, null);
+                File.AppendAllText("total_sentiment.txt", sentiment.ToString());
+                Console.WriteLine("Total scores for the range requested is {0}", sentiment);
+
             }
 
             Console.WriteLine("Finished...");
