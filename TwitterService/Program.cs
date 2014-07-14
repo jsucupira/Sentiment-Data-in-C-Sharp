@@ -8,7 +8,6 @@ using Core.DependencyResolver;
 using Data.AzureBlob;
 using Data.Contracts;
 using Data.FileSystem;
-using Domain;
 using NDesk.Options;
 
 namespace TwitterService
@@ -19,7 +18,6 @@ namespace TwitterService
 
         private static void Main(string[] args)
         {
-
             Console.WriteLine("Starting to process data");
 
             bool showHelp = false;
@@ -32,41 +30,22 @@ namespace TwitterService
             string processEndDate = null;
             string storageType = "FileSystem";
 
-            OptionSet p = new OptionSet
+            OptionSet options = new OptionSet
             {
-                {
-                    "storage=", "type the storage type [OPTIONAL]. [FileSystem], [AzureStorage], or [MSMQ]", v => storageType = v
-                },
-                {
-                    "s|stream=", "Stream twitter data. This is true or false [OPTIONAL]", (bool v) => streamData = v
-                },
-                {
-                    "readdata=", "Read data saved in storage [OPTIONAL]", (bool v) => readData = v
-                },
-                {
-                    "sentimentbystate=", "Analyse sentiment by US state [OPTIONAL]", (bool v) => byState = v
-                },
-                {
-                    "nonsentiment=", "Analyse the twitter files for words found in the tweet and its calculated scores [OPTIONAL]", (bool v) => nonsentiment = v
-                },
-                {
-                    "processEndDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the end date for when the file was created", v => processEndDate = v
-                },
-                {
-                    "filename=", "Process the data retrieved from twitter [OPTIONAL]. This value should be the file name that contains the tweets", v => processFile = v
-                },
-                {
-                    "processStartDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the start date for when the file was created", v => processStartDate = v
-                },
-                {
-                    "h|help", "show this message and exit", v => showHelp = v != null
-                },
+                { "storage=", "type the storage type [OPTIONAL]. [FileSystem], [AzureStorage], or [MSMQ]", v => storageType = v }, 
+                { "s|stream=", "Stream twitter data. This is true or false [OPTIONAL]", (bool v) => streamData = v }, 
+                { "readdata=", "Read data saved in storage [OPTIONAL]", (bool v) => readData = v },
+                { "sentimentbystate=", "Analyse sentiment by US state [OPTIONAL]", (bool v) => byState = v },
+                { "nonsentiment=", "Analyse the twitter files for words found in the tweet and its calculated scores [OPTIONAL]", (bool v) => nonsentiment = v },
+                { "processEndDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the end date for when the file was created", v => processEndDate = v },
+                { "filename=", "Process the data retrieved from twitter [OPTIONAL]. This value should be the file name that contains the tweets", v => processFile = v },
+                { "processStartDate=", "Process the data retrieved from twitter [OPTIONAL]. The value should be the start date for when the file was created", v => processStartDate = v },
+                { "h|help", "show this message and exit", v => showHelp = v != null }
             };
 
-            if (ParseArguments(args, p, showHelp)) return;
+            if (ParseArguments(args, options, showHelp)) return;
 
             SetupStorage(storageType);
-
 
             if (streamData)
             {
@@ -85,7 +64,7 @@ namespace TwitterService
             {
                 if (File.Exists("total_sentiment.txt"))
                     File.Delete("total_sentiment.txt");
-                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processFile);
+                float sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processFile);
 
                 File.AppendAllText("total_sentiment.txt", sentiment.ToString());
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processFile));
@@ -94,57 +73,66 @@ namespace TwitterService
             {
                 if (File.Exists("total_sentiment.txt"))
                     File.Delete("total_sentiment.txt");
-                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate });
+                float sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate });
 
                 File.AppendAllText("total_sentiment.txt", sentiment.ToString());
-
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, new[] { processStartDate, processEndDate }));
             }
             else if (!string.IsNullOrEmpty(processStartDate))
             {
                 if (File.Exists("total_sentiment.txt"))
                     File.Delete("total_sentiment.txt");
-                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate);
+                float sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate);
 
                 File.AppendAllText("total_sentiment.txt", sentiment.ToString());
-
                 Console.WriteLine("Total scores for the range requested is {0}", ParseTwitterData.RetrieveTweetsScores(_storage, processStartDate));
             }
             else if (readData)
             {
                 if (File.Exists("total_sentiment.txt"))
                     File.Delete("total_sentiment.txt");
-                var sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, null);
+                float sentiment = ParseTwitterData.RetrieveTweetsScores(_storage, null);
                 File.AppendAllText("total_sentiment.txt", sentiment.ToString());
                 Console.WriteLine("Total scores for the range requested is {0}", sentiment);
-
             }
 
             Console.WriteLine("Finished...");
         }
 
-        private static bool ParseArguments(string[] args, OptionSet p, bool showHelp)
+        #region private helpers
+
+        private static void AnalyseByState(string processFile, string processStartDate, string processEndDate)
         {
-            List<string> extra;
-            try
+            if (File.Exists("by_state.txt"))
+                File.Delete("by_state.txt");
+            StringBuilder stateSentiment = new StringBuilder();
+            if (!string.IsNullOrEmpty(processFile))
             {
-                extra = p.Parse(args);
+                Dictionary<string, float> items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processFile);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
-            catch (OptionException e)
+            else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
             {
-                Error(p, e.Message);
-                return true;
+                Dictionary<string, float> items = ParseTwitterData.RetrieveScoresByUSStates(_storage, new[] { processStartDate, processEndDate });
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else if (!string.IsNullOrEmpty(processStartDate))
+            {
+                Dictionary<string, float> items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processStartDate);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+            }
+            else
+            {
+                Dictionary<string, float> items = ParseTwitterData.RetrieveScoresByUSStates(_storage, null);
+                foreach (var item in items.OrderBy(t => t.Key))
+                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
 
-            if (extra.Count > 0)
-                Error(p, "Incorrect parameters");
-
-            if (showHelp)
-            {
-                ShowHelp(p);
-                return true;
-            }
-            return false;
+            File.AppendAllText("by_state.txt", stateSentiment.ToString());
+            Console.WriteLine("Saved by_state.txt created.");
         }
 
         private static void AnalyseNonSentiments(string processFile, string processStartDate, string processEndDate)
@@ -155,25 +143,25 @@ namespace TwitterService
             StringBuilder nonSentiments = new StringBuilder();
             if (!string.IsNullOrEmpty(processFile))
             {
-                var items = ParseTwitterData.RetrieveTermSentiments(_storage, processFile);
+                Dictionary<string, float> items = ParseTwitterData.RetrieveTermSentiments(_storage, processFile);
                 foreach (var item in items.OrderBy(t => t.Value))
                     nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
             else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
             {
-                var items = ParseTwitterData.RetrieveTermSentiments(_storage, new[] { processStartDate, processEndDate });
+                Dictionary<string, float> items = ParseTwitterData.RetrieveTermSentiments(_storage, new[] { processStartDate, processEndDate });
                 foreach (var item in items.OrderBy(t => t.Value))
                     nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
             else if (!string.IsNullOrEmpty(processStartDate))
             {
-                var items = ParseTwitterData.RetrieveTermSentiments(_storage, processStartDate);
+                Dictionary<string, float> items = ParseTwitterData.RetrieveTermSentiments(_storage, processStartDate);
                 foreach (var item in items.OrderBy(t => t.Value))
                     nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
             else
             {
-                var items = ParseTwitterData.RetrieveTermSentiments(_storage, null);
+                Dictionary<string, float> items = ParseTwitterData.RetrieveTermSentiments(_storage, null);
                 foreach (var item in items.OrderBy(t => t.Value))
                     nonSentiments.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
             }
@@ -182,38 +170,38 @@ namespace TwitterService
             Console.WriteLine("Saved non_sentiment.txt created.");
         }
 
-        private static void AnalyseByState(string processFile, string processStartDate, string processEndDate)
+        private static void Error(OptionSet p, string message)
         {
-            if (File.Exists("by_state.txt"))
-                File.Delete("by_state.txt");
-            StringBuilder stateSentiment = new StringBuilder();
-            if (!string.IsNullOrEmpty(processFile))
+            Console.WriteLine();
+            Console.Write("TwitterService: " + message + "\r\n");
+            Console.WriteLine();
+            Console.WriteLine("Try `TwitterService --help' for more information.");
+            p.WriteOptionDescriptions(Console.Out);
+            Console.WriteLine();
+        }
+
+        private static bool ParseArguments(IEnumerable<string> args, OptionSet options, bool showHelp)
+        {
+            List<string> extra;
+            try
             {
-                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processFile);
-                foreach (var item in items.OrderBy(t => t.Key))
-                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+                extra = options.Parse(args);
             }
-            else if (!string.IsNullOrEmpty(processStartDate) && !string.IsNullOrEmpty(processEndDate))
+            catch (OptionException e)
             {
-                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, new[] { processStartDate, processEndDate });
-                foreach (var item in items.OrderBy(t => t.Key))
-                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
-            }
-            else if (!string.IsNullOrEmpty(processStartDate))
-            {
-                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, processStartDate);
-                foreach (var item in items.OrderBy(t => t.Key))
-                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
-            }
-            else
-            {
-                var items = ParseTwitterData.RetrieveScoresByUSStates(_storage, null);
-                foreach (var item in items.OrderBy(t => t.Key))
-                    stateSentiment.AppendLine(string.Format("{0} = {1}", item.Key, item.Value));
+                Error(options, e.Message);
+                return true;
             }
 
-            File.AppendAllText("by_state.txt", stateSentiment.ToString());
-            Console.WriteLine("Saved by_state.txt created.");
+            if (extra.Count > 0)
+                Error(options, "Incorrect parameters");
+
+            if (showHelp)
+            {
+                ShowHelp(options);
+                return true;
+            }
+            return false;
         }
 
         private static void SetupStorage(string storageType)
@@ -235,16 +223,6 @@ namespace TwitterService
             _storage = ServiceLocator.GetInstance<IStorage>();
         }
 
-        private static void Error(OptionSet p, string message)
-        {
-            Console.WriteLine();
-            Console.Write("TwitterService: " + message + "\r\n");
-            Console.WriteLine();
-            Console.WriteLine("Try `TwitterService --help' for more information.");
-            p.WriteOptionDescriptions(Console.Out);
-            Console.WriteLine();
-        }
-
         private static void ShowHelp(OptionSet p)
         {
             Console.WriteLine();
@@ -258,5 +236,7 @@ namespace TwitterService
             Console.WriteLine("Example: TwitterService -stream or TwitterService - process");
             Console.WriteLine();
         }
+
+        #endregion
     }
 }
